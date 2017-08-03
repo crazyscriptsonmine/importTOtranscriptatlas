@@ -43,7 +43,13 @@ foreach my $index (keys %Libraries) {
 		$finalfile = "$basepath/$index"."All";
 		$overlapfile = "$basepath/$index"."Overlap";
 		
+		$finaloutput = "Processing $index,". scalar(localtime);
+		`echo $finaloutput >> $statusfile`;
 		`perl /home/modupe/public_html/atlas/SQLscripts/outputgenequery.pl -1 $libraries -2 $finalfile`; #recompute the new files
+                $finaloutput = "Finished ALL Genes for  $index,". scalar(localtime);
+                `echo $finaloutput >> $statusfile`;
+                $finaloutput = "Moving on to overlapping genes,". scalar(localtime);
+                `echo $finaloutput >> $statusfile`;
 		`perl /home/modupe/public_html/atlas/SQLscripts/outputcommagenes.pl -1 $libraries -2 $overlapfile`; #recompute the overlap files.
 		`gzip -f $finalfile.txt $overlapfile.txt`;
 		`rm -rf $basepath/*v1 $basepath/*v2 $basepath/*v3`;
