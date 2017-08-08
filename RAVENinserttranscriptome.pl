@@ -26,8 +26,8 @@ my $std_err = '/home/modupe/.LOG/RavTAD-'.`date +%m-%d-%y_%T`; chomp $std_err; $
 my $jobid = "RavenTAD-".`date +%m-%d-%y_%T`;
 my $progressnote = "/home/modupe/.LOG/progressnote".`date +%m-%d-%y_%T`; chomp $progressnote; $progressnote = $progressnote.'.txt'; 
 
-open(STDOUT, '>', "$std_out") or die "Log file doesn't exist";
-open(STDERR, '>', "$std_err") or die "Error file doesn't exist";
+#open(STDOUT, '>', "$std_out") or die "Log file doesn't exist";
+#open(STDERR, '>', "$std_err") or die "Error file doesn't exist";
  
 #ARGUMENTS
 my($help,$manual,$deletenotdone,$in1);
@@ -56,7 +56,7 @@ my (%Hashresults, %Birdresults, %Nullresults);
 my ($dbh, $sth, $syntax, $row, @row);
 
 #DIRECTORY
-my (@parse, @NewDirectory);
+my (@parse, @NewDirectory, @numberz);
 
 # TABLE VARIABLES
 my ($accepted, $samfile, $alignfile, $isoformsfile, $genesfile, $deletionsfile, $insertionsfile, $transcriptsgtf, $junctionsfile, $run_log, $htseqcount,$variantfile, $vepfile, $annovarfile);
@@ -94,7 +94,6 @@ opendir(DIR,$in1) or die "Folder \"$in1\" main doesn't exist\n";
 my @Directory = readdir(DIR);
 close(DIR);
 #pushing each subfolder
-foreach (@Directory){ if ($_ =~ /^\w*_\d*$/){  push (@NewDirectory, $_); } }
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - M A I N - - - - - - - - - - - - - - - - - - - - - -
@@ -110,14 +109,15 @@ print "\n\n\tCONNECTING TO THE DATABASE :".`date`."\n\n";
 $dbh = mysql();
 if ($deletenotdone) {DELETENOTDONE();}
 
-if ($in1 =~ /\w.*_(\d+)/){
+if ($in1 =~ /\w.*_(\d+)_/){
+	 my $libraryidnumber = $1;
   CHECKING();
-  unless (exists $Hashresults{$1}){
-    if (exists $Birdresults{$1}){
+  unless (exists $Hashresults{$libraryidnumber}){
+    if (exists $Birdresults{$libraryidnumber}){
       $parsedinput = $in1;
 			@foldercontent = split("\n", `find $parsedinput`); #get details of the folder
 			foreach (grep /\.gtf/, @foldercontent) { unless (`head -n 3 $_ | wc -l` <= 0 && $_ =~ /skipped/) { $transcriptsgtf = $_; } }
-			$accepted = (grep /accepted_hits.bam/, @foldercontent)[0];
+			$accepted = (grep /sorted_bam.bam/, @foldercontent)[0];
 			$alignfile = (grep /summary.txt/, @foldercontent)[0];
 			$genesfile = (grep /genes.fpkm/, @foldercontent)[0];
 			$isoformsfile = (grep /isoforms.fpkm/, @foldercontent)[0];
@@ -130,8 +130,8 @@ if ($in1 =~ /\w.*_(\d+)/){
 			$vepfile = (grep /vep.txt$/i, @foldercontent)[0];
 			$annovarfile = (grep /anno.txt$/, @foldercontent)[0];
 			$htseqcount = (grep /.counts$/, @foldercontent)[0];
-			LOGFILE();
-			my $verdict = PARSING($1,$parsedinput);
+			LOGFILE($libraryidnumber);
+			my $verdict = PARSING($libraryidnumber,$parsedinput);
 				
 			#progress report
 			if ($verdict == 1) {
@@ -140,9 +140,9 @@ if ($in1 =~ /\w.*_(\d+)/){
 				system "sendmail $email < $progressnote"; close NOTE;
 			} #end if
 		} else {
-			print "\nSkipping \"library_$1\" in \"$in1\" folder because it isn't in birdbase\n$mystderror\n";
+			print "\nSkipping \"library_$libraryidnumber\" in \"$in1\" folder because it isn't in birdbase\n$mystderror\n";
 		} #end if
-	}else {print "\nLibrary => $1 exists in the database\n";} #end unless
+	}else {print "\nLibrary => $libraryidnumber exists in the database\n";} #end unless
 } #end if	 
 #SUMMARYstmts(); 
 system "rm -rf $progressnote";
@@ -231,15 +231,36 @@ sub LOGFILE { #subroutine for getting metadata
 			$mappingtool = ((split(':',((grep /^ID\:/, @allgeninfo)[0])))[-1])." v".((split(':',((grep /^VN\:/, @allgeninfo)[0])))[-1]);
 			if ($allgeninfo[1] =~ /ID\:(\S*)$/){ $mappingtool = $1." v".(split(':',$allgeninfo[3]))[-1]; } #mapping tool name and version
 			if ($mappingtool =~ /hisat/i) { 
-				$command =~ /\-x\s(\w+)\s/;
+				$command =~ /\-x\s(\w+).*\s/;
 				$refgenome = $1;
 				$refgenomename = (split('\/', $refgenome))[-1]; #reference genome name
 				if ($command =~ /-1/){
 					$command =~ /\-1\s(\S+)\s-2\s(\S+)"$/;
-					my @nseq = split(",",$1); my @pseq = split(",",$2);
-					foreach (@nseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
-					foreach (@pseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
-					chop $sequences;
+					
+					unless ($1 =~ /pipe/) { #making sure .pipe isn't the name of the sequence
+						my @nseq = split(",",$1); my @pseq = split(",",$2);
+						foreach (@nseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
+						foreach (@pseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
+						chop $sequences;
+					} else {
+						$in1 =~ /\w.*_(\d+_.*R)\d.*/;
+						my $path = `readlink -f $in1`; chop $path; my @path = split('\/', $path); undef $path; foreach (0..$#path-1) { $path .= $path[$_]."/"; }
+						my $locale = `locate $path$1 | head -n 2`; chop $locale;
+						my @seqall = split("\n", $locale, 2);
+						my @nseq = split(",",$seqall[0]); my @pseq = split(",", $seqall[1]);
+						foreach (@nseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
+						foreach (@pseq){ $sequences .= ( (split('\/', $_))[-1] ).",";}
+						
+						unless ($alignfile){
+							$Mfolder = "$STORAGEPATH/library_$_[0]"; `mkdir -p $Mfolder`; print "\tmade $Mfolder\n"; #decided to keep all the hisat details.
+							$alignfile = "$Mfolder/align_summary.txt";
+							unless (-e $alignfile) {
+                        print "Job: Reference Mapping using HISAT2";
+								`hisat2 -x $path/chicken/chicken -1 $seqall[0] -2 $seqall[1] -S $Mfolder/library_$_[0].sam 2>$alignfile`;
+                        print ". . . Done\n";
+							}
+						}
+					}
 				}
 				elsif ($command =~ /-U/){
 					$command =~ /\-U\s(\S+)"$/;
@@ -287,7 +308,7 @@ sub LOGFILE { #subroutine for getting metadata
 			$annotation = undef;
 			$stranded = undef; $sequences = undef;
 		}
-	}
+	} # end if samfile
 	elsif ($run_log){
 		@allgeninfo = split('\s',`head -n 1 $run_log`);
 		#getting metadata info
@@ -425,7 +446,8 @@ sub GENES_FPKM { #subroutine for getting gene information
 						foreach (split("\";", $therest)) { $_ =~ s/\s+|\s+//g;my($a, $b) = split /\"/; $Drest{$a} = $b;}
 						my $dstax;
 						if (length $Drest{'gene_id'} > 1) {
-							$dstax = "$Drest{'gene_id'}-$chrom_no";} else {$dstax = "xxx".$i++."-$chrom_no";}
+							$dstax = "$Drest{'gene_id'}-$chrom_no";
+                  } else {$dstax = "xxx".$i++."-$chrom_no";}
 						if (exists $CHFPKM{$dstax}){ #chromsome stop
 							if ($chrom_stop > $CHFPKM{$dstax}) {
 								$CHFPKM{$dstax} = $chrom_stop;
@@ -487,7 +509,7 @@ sub GENES_FPKM { #subroutine for getting gene information
 					print "NOTICE:\t Importing $diffexpress expression information for $_[0] to genes_fpkm table ...";
 					
 					##change to thread
-					my @fpkmdetails = scalar keys %ARFPKM;
+					my @fpkmdetails = map {$_; } sort keys %ARFPKM;
 					undef @VAR; undef @threads;
 					push @VAR, [ splice @fpkmdetails, 0, 200 ] while @fpkmdetails; #sub the files to multiple subs
 					$queue = new Thread::Queue();
@@ -514,10 +536,11 @@ sub GENES_FPKM { #subroutine for getting gene information
 					my ($chrom_no, $tool, $typeid, $chrom_start, $chrom_stop, $qual, $orn, $idk, $therest ) = split /\t/;
 					if ($typeid && $typeid =~ /^transcript/){ #check to make sure only transcripts are inputed
 						my %Drest = ();
-						foreach (split("\";", $therest)) { $_ =~ s/\s+|\s+//g;my($a, $b) = split /\"/; $Drest{$a} = $b;}
+						foreach (split("\";", $therest)) { $_ =~ s/\s+|\s+//g; my($a, $b) = split /\"/; $Drest{$a} = $b;}
 						my $dstax;
 						if (length $Drest{'gene_id'} > 1) {
-							$dstax = "$Drest{'gene_id'}-$chrom_no";} else {$dstax = "xxx".$i++."-$chrom_no";}
+							$dstax = "$Drest{'gene_id'}-$chrom_no";
+                  } else {$dstax = "xxx".$i++."-$chrom_no";}
 						if (exists $CHFPKM{$dstax}){ #chromsome stop
 							if ($chrom_stop > $CHFPKM{$dstax}) {
 								$CHFPKM{$dstax} = $chrom_stop;
@@ -576,7 +599,7 @@ sub GENES_FPKM { #subroutine for getting gene information
 					print "NOTICE:\t Importing StringTie expression information for $_[0] to genes_fpkm table ...";
 					
 					##change to thread
-					my @fpkmdetails = scalar keys %ARFPKM;
+					my @fpkmdetails = map {$_; } sort keys %ARFPKM;
 					undef @VAR; undef @threads;
 					push @VAR, [ splice @fpkmdetails, 0, 200 ] while @fpkmdetails; #sub the files to multiple subs
 					$queue = new Thread::Queue();
@@ -613,8 +636,12 @@ sub PARSING {
 	unless (($refgenomename =~ /chicken/i) || ($refgenomename =~ /galgal/i)){ die "$refgenomename is not chicken or gallus\n";} 
   #making sure I'm working on only the chicken files for now, need to find annotation of alligator
   my @checkerno = split('\/',$allgeninfo[$#allgeninfo]);
-  my @numberz =split('_', $checkerno[$#checkerno]); 
-  if ($numberz[0] == $lib_id){
+	unless ($checkerno[$#checkerno] =~ /pipe/) {
+		@numberz = split('_', $checkerno[$#checkerno]);
+	} else {
+		$numberz[0] = $lib_id;
+	}
+	if ($numberz[0] == $lib_id){
     #making sure the arguments are accurately parsed
     if (exists $parsablegenomes{$refgenomename} || $refgenome =~ /Galgal4/){
       open(ALIGN, "<$alignfile") or die "Can't open file $alignfile\n";
@@ -672,10 +699,14 @@ sub PARSING {
 				print "NOTICE:\t $lib_id already in transcripts_summary tables... Moving on \n";
 			}
 			
-							#update
+			#update
+			if ($insertions > 0) {
 				$sth = $dbh->prepare("update transcripts_summary set total_reads = $total, mapped_reads = $mapped, unmapped_reads = $unmapped, deletions = $deletions, insertions = $insertions, junctions = $junctions where library_id = $lib_id");
 				$sth ->execute();
-				
+			} else {
+				$sth = $dbh->prepare("update transcripts_summary set total_reads = $total, mapped_reads = $mapped, unmapped_reads = $unmapped where library_id = $lib_id");
+				$sth ->execute();
+			}
 			GENES_FPKM($lib_id);
 
       if ($htseqcount){ HTSEQ($htseqcount); } #htseqcount details to the database.
@@ -712,7 +743,7 @@ sub PARSING {
 sub HTSEQ { #importing Htseqcount details to the database
   print "\n\tSTORING HTSEQ IN THE DATABASE\n\n";
 	my $htseqnumber = $dbh->selectrow_array("select count(*) from htseq where library_id = '$lib_id'");
-	my $htseq = `cat $_[0] | wc -l`; if ($htseq >6){ $htseq -= 6;} else {$htseq = 0;} 
+	my $htseq = `cat $_[0] | wc -l`; if ($htseq >1){ $htseq -= 1;} else {$htseq = 0;} 
   unless ($htseq == $htseqnumber) {
 		if ($htseqnumber > 1 ){ $sth = $dbh->prepare("delete from htseq where library_id = '$lib_id'"); $sth->execute(); }
 	  open(HTSEQ, "<$_[0]") or die "Can't open file $_[0]\n"; 
@@ -733,16 +764,64 @@ sub VARIANTS { #process variants
   $sth = $dbh->prepare("select library_id from variants_summary where library_id = '$_[0]' and status = 'done'"); $sth->execute(); $found = $sth->fetch();	
 	unless ($found) {
 		print "\n\tWORKING ON VARIANT ANALYSIS\n\n";
+		my $libraryNO = "library_".$_[0];
+      $Mfolder = "$STORAGEPATH/$libraryNO"; `mkdir -p $Mfolder`; print "\tmade $Mfolder\n"; #decided to keep all the variant folders.
 		my $specie = $_[2];
 		my $REF= "$GENOMES/$_[2]/$_[2]".".fa";
 		my $ANN = $_[3];
-		my $libraryNO = "library_".$_[0]; 
 		unless ($variantfile){ #check if variantfile exists if not, it will be generated using VAP
 			print "NOTICE: Variant file isn't present, creating variantfile using VAP details & is stored in $STORAGEPATH\n";
-			my $bamfile = $_[1]; 
-			my $REF= "$GENOMES/$_[2]/$_[2]".".fa";
-			my $geneLIST = "$GENOMES/$_[2]/$_[2]".".txt";
-			my $DICT = "$GENOMES/$_[2]/$_[2]".".dict";
+			my $bamfile = $_[1];
+         my $path = `readlink -f $in1`; chop $path; my @path = split('\/', $path); undef $path; foreach (0..$#path-1) { $path .= $path[$_]."/"; }
+
+         #create .fna dictionary
+         my ($DATA,$OUT1,$OUT2, %SEQ, %ORDER, %SEQnum, %SEQheader);
+         open($OUT1, "> $Mfolder/chicken.fna") or die $!;
+         open($OUT2, "> $Mfolder/chicken.fna.fai") or die $!;
+         $/ = "\>";
+         open ($DATA,"<$path/chicken/chicken.fa") or die $!;
+         my @fastqfile = <$DATA>;
+         shift(@fastqfile);
+         my $ii = 0;
+         foreach my $entry (@fastqfile){
+            my @pieces = split(/\n/, $entry);
+            $pieces[0] = (split(' ',$pieces[0]))[0];
+            $ii++;
+            $ORDER{$ii} = $pieces[0];
+            my $seq = '';
+            foreach my $num (1.. $#pieces-1){
+               $seq .= $pieces[$num];
+            }
+            if($pieces[$#pieces] =~ />$/) { $seq .= substr($pieces[$#pieces],0,-1); }
+            else { $seq .= $pieces[$#pieces]; }
+            $SEQ{$pieces[0]} = $seq;
+            $SEQnum{$pieces[0]} = length($seq);
+            $SEQheader{$pieces[0]} = length($pieces[0]);
+         }
+         my ($check, $start, $newstart, $last);
+         foreach my $number (sort {$a <=> $b} keys %ORDER){
+            my $header = $ORDER{$number};
+            if (length($header) >= 1) {
+               print $OUT1 ">$header\n$SEQ{$header}\n";
+               unless ($check){
+                  $start = $SEQheader{$header}+2;
+                  $last = $SEQnum{$header}+1;
+                  print $OUT2 "$header\t$SEQnum{$header}\t$start\t$SEQnum{$header}\t$last\n";
+                  $check = "yes";
+               }
+               else {
+                  $newstart = $SEQheader{$header}+2+$last+$start;
+                  $start = $newstart;
+                  $last = $SEQnum{$header}+1;
+                  print $OUT2 "$header\t$SEQnum{$header}\t$start\t$SEQnum{$header}\t$last\n";
+                  $check = "yes";
+               }
+            }
+         }
+         close $DATA; close $OUT1; close $OUT2;
+         $/ = "\n";
+         
+         my $REF = "$Mfolder/chicken.fna";
 			my $ANN = $_[3];
   
 			$Mfolder = "$STORAGEPATH/$libraryNO"; `mkdir -p $Mfolder`; print "\tmade $Mfolder\n"; #decided to keep all the variant folders.
@@ -754,6 +833,13 @@ sub VARIANTS { #process variants
 			my $filename = "$Mfolder/$libraryNO.vcf";
 			unless (-e $filename) {
 				$filename = "$Mfolder/$libraryNO.bam";
+            
+            #create GATK sequence dictionary
+            $filename = "$Mfolder/chicken.dict";
+            unless (-e "$filename"){
+               `java -jar $PICARDDIR CreateSequenceDictionary R=$REF O=$filename CREATE_INDEX=true`;
+            }
+         
 				#SORT BAM
 				unless (-e $filename){
 					`java -jar $PICARDDIR SortSam INPUT=$bamfile OUTPUT=$filename SO=coordinate`;
@@ -990,7 +1076,7 @@ sub VEPVARIANT {
 				my @indentation = split("_", $veparray[0]);
 				if ($#indentation > 2) { $chrom = $indentation[0]."_".$indentation[1]; $position = $indentation[2]; }
 				else { $chrom = $indentation[0]; $position = $indentation[1]; }
-				$chrom = "chr".$chrom;
+				#$chrom = "chr".$chrom;
 				unless ( $extra{'VARIANT_CLASS'} =~ "SNV" or $extra{'VARIANT_CLASS'} =~ "substitution" ){ $position--; }
 				else {
 					my @poly = split("/",$indentation[$#indentation]);
@@ -1146,7 +1232,7 @@ sub geneparseinput{
 	}
 }
 sub strparseinput{
-	$syntax = "insert into genes_fpkm (library_id, gene_id, gene_short_name, chromnumber, chromstart, chromstop, coverage, fpkm, tpm ) values (?,?,?,?,?,?,?,?,?)";
+	$syntax = "insert into genes_fpkm (library_id, gene_id, gene_short_name, chrom_no, chrom_start, chrom_stop, coverage, fpkm, tpm ) values (?,?,?,?,?,?,?,?,?)";
 	foreach my $a (@_) {
 		$dbh = mysql();
 		$sth = $dbh->prepare($syntax);
@@ -1177,9 +1263,15 @@ sub htseqparseinput {
 		$dbh = mysql();
 		$sth = $dbh->prepare($syntax);
 		my ($NAME, $VALUE) = split (/\t/, $a);
-	  if ($NAME =~ /^[a-z0-9A-Z]/i) {
-	    $sth->execute($lib_id, $NAME, $VALUE);
-	  }
+      if ($NAME =~ /^[a-z0-9A-Z]/i) {
+         if ($NAME =~ /ENSGALG/) {
+				my $path = `readlink -f $in1`; chop $path; my @path = split('\/', $path); undef $path; foreach (0..$#path-1) { $path .= $path[$_]."/"; }
+				my $tobesyntax = 'j=$(grep "gene" '.$path.'chicken/*gff3 | grep "'.$NAME.'" | grep "Name"| head -n1); k=$(echo $j | awk -F\';\' \'{print $2}\'); echo $k | awk -F\'=\' \'{print $2}\'';
+				my $newgene = `$tobesyntax`; chop $newgene;
+				if ($newgene) { $NAME = $newgene;}
+				$sth->execute($lib_id, $NAME, $VALUE);
+         }
+      }
 		$sth->finish;
 	}
 }
@@ -1282,3 +1374,4 @@ Please acknowledge author and affiliation in published work arising from this sc
 =cut
 
 
+   
