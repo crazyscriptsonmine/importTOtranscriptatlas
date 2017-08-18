@@ -744,12 +744,12 @@ sub PARSING {
   return $verdict;
 }
 sub HTSEQ { #importing Htseqcount details to the database
-  print "\n\tSTORING HTSEQ IN THE DATABASE\n\n";
+   print "\n\tSTORING HTSEQ IN THE DATABASE\n\n";
 	my $htseqnumber = $dbh->selectrow_array("select count(*) from htseq where library_id = '$lib_id'");
 	my $htseq = `cat $_[0] | wc -l`; if ($htseq >1){ $htseq -= 1;} else {$htseq = 0;} 
-  unless ($htseq == $htseqnumber) {
+   unless ($htseq == $htseqnumber) {
 		if ($htseqnumber > 1 ){ $sth = $dbh->prepare("delete from htseq where library_id = '$lib_id'"); $sth->execute(); }
-	  open(HTSEQ, "<$_[0]") or die "Can't open file $_[0]\n"; 
+      open(HTSEQ, "<$_[0]") or die "Can't open file $_[0]\n"; 
 		##change to thread
 		my @htseqdetails = <HTSEQ>; close(HTSEQ);
 		undef @VAR; undef @threads;
@@ -835,7 +835,6 @@ sub VARIANTS { #process variants
 			#PICARD
 			my $filename = "$Mfolder/$libraryNO.vcf";
 			unless (-e $filename) {
-				$filename = "$Mfolder/$libraryNO.bam";
             
             #create GATK sequence dictionary
             $filename = "$Mfolder/chicken.dict";
@@ -844,6 +843,7 @@ sub VARIANTS { #process variants
             }
          
 				#SORT BAM
+            $filename = "$Mfolder/$libraryNO.bam";
 				unless (-e $filename){
 					`java -jar $PICARDDIR SortSam INPUT=$bamfile OUTPUT=$filename SO=coordinate`;
 				} else { print "NOTICE: $filename exists\n"; }
@@ -1268,12 +1268,16 @@ sub htseqparseinput {
 		$sth = $dbh->prepare($syntax);
 		my ($NAME, $VALUE) = split (/\t/, $a);
       if ($NAME =~ /^[a-z0-9A-Z]/i) {
-         if ($NAME =~ /ENSGALG/) {
-				my $path = `readlink -f $in1`; chop $path; my @path = split('\/', $path); undef $path; foreach (0..$#path-1) { $path .= $path[$_]."/"; }
-				my $tobesyntax = 'j=$(grep "gene" '.$path.'chicken/*gff3 | grep "'.$NAME.'" | grep "Name"| head -n1); k=$(echo $j | awk -F\';\' \'{print $2}\'); echo $k | awk -F\'=\' \'{print $2}\'';
-				my $newgene = `$tobesyntax`; chop $newgene;
-				if ($newgene) { $NAME = $newgene;}
-				$sth->execute($lib_id, $NAME, $VALUE);
+         if ($VALUE >= 0) {
+#           if ($NAME =~ /ENSGALG/) {
+#			   	my $path = `readlink -f $in1`; chop $path; my @path = split('\/', $path); undef $path; foreach (0..$#path-1) { $path .= $path[$_]."/"; }
+#			   	my $tobesyntax = 'j=$(grep "gene" '.$path.'chicken/*gff3 | grep "'.$NAME.'" | grep "Name"| head -n1); k=$(echo $j | awk -F\';\' \'{print $2}\'); echo $k | awk -F\'=\' \'{print $2}\'';
+#			   	my $newgene = `$tobesyntax`; chop $newgene;
+#			   	if ($newgene) { $NAME = $newgene;}
+#			     	$sth->execute($lib_id, $NAME, $VALUE);
+#           } else {
+              $sth->execute($lib_id, $NAME, $VALUE);
+            #}
          }
       }
 		$sth->finish;
