@@ -434,7 +434,7 @@ sub GENES_FPKM { #subroutine for getting gene information
 			
 		} elsif ($transcriptsgtf){ #working with gtf transcripts file
 			#differential expression tool names
-			if (`head -n 1 $transcriptsgtf` =~ /cufflinks/i) { #working with cufflinks transcripts.gtf file
+			if (`head -n 1 $transcriptsgtf` =~ /cufflinks\s/i) { #working with cufflinks transcripts.gtf file
 				$diffexpress = "Cufflinks";
 				open(FPKM, "<", $transcriptsgtf) or die "\nERROR:\t Can not open file $transcriptsgtf\n";
 				(%ARFPKM,%CHFPKM, %BEFPKM, %CFPKM, %DFPKM, %DHFPKM, %DLFPKM, %cfpkm, %dfpkm, %dhfpkm, %dlfpkm)= ();
@@ -528,7 +528,7 @@ sub GENES_FPKM { #subroutine for getting gene information
 						print "NOTICE:\t $_[0] already in genes_fpkm table... Moving on \n";	
 				}	
 			} # end if cufflinks
-			elsif (`head -n 1 $transcriptsgtf` =~ /stringtie/i) { #working with stringtie output
+			elsif (`head -n 1 $transcriptsgtf` =~ /stringtie\s/i) { #working with stringtie output
 				$diffexpress = substr( `head -n 2 $transcriptsgtf | tail -1`,2,-1);
 				open(FPKM, "<", $transcriptsgtf) or die "\nERROR:\t Can not open file $transcriptsgtf\n";
 				(%ARFPKM,%CHFPKM, %BEFPKM, %CFPKM, %DFPKM, %TPM, %cfpkm, %dfpkm, %tpm)= ();
